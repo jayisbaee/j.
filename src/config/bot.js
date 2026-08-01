@@ -185,6 +185,61 @@ export const botConfig = {
     begMin: 5,
     begMax: 50,
 
+import discord
+from discord.ext import commands
+
+# Make sure your bot has intents for members if needed
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+# ---------- Replace this with YOUR actual balance storage ----------
+# Example using a simple dict (replace with your database / JSON / Mongo etc.)
+balances = {}  # {user_id: balance}
+
+def get_balance(user_id: int) -> int:
+    return balances.get(user_id, 0)
+
+def set_balance(user_id: int, amount: int):
+    balances[user_id] = amount
+
+def add_balance(user_id: int, amount: int):
+    balances[user_id] = get_balance(user_id) + amount
+# -------------------------------------------------------------------
+
+
+@bot.command(name="setbal")
+@commands.is_owner()          # Only the bot owner can use this
+async def set_balance_cmd(ctx, member: discord.Member, amount: int):
+    """Set a user's balance to an exact amount"""
+    set_balance(member.id, amount)
+    await ctx.send(f"✅ Set **{member.display_name}**'s balance to **{amount:,}**")
+
+
+@bot.command(name="addbal")
+@commands.is_owner()
+async def add_balance_cmd(ctx, member: discord.Member, amount: int):
+    """Add (or remove with negative number) to a user's balance"""
+    add_balance(member.id, amount)
+    new_bal = get_balance(member.id)
+    await ctx.send(f"✅ {'Added' if amount >= 0 else 'Removed'} **{abs(amount):,}** to **{member.display_name}**. New balance: **{new_bal:,}**")
+
+
+@bot.command(name="checkbal")
+@commands.is_owner()
+async def check_balance_cmd(ctx, member: discord.Member = None):
+    """Check any user's balance (owner only)"""
+    member = member or ctx.author
+    bal = get_balance(member.id)
+    await ctx.send(f"**{member.display_name}** has **{bal:,}**")
+
+
+
+
+
+    
     // Command cooldowns (milliseconds).
     cooldowns: {
       daily: 24 * 60 * 60 * 1000,
