@@ -1,73 +1,61 @@
-import { SlashCommandBuilder, MessageFlags } from 'discord.js';
-import { successEmbed, errorEmbed } from '../../utils/embeds.js';
-import { getEconomyData, setEconomyData } from '../../utils/economy.js';
-import { withErrorHandling } from '../../utils/errorHandler.js';
-import { InteractionHelper } from '../../utils/interactionHelper.js';
-import { isBotOwner } from '../../config/bot.js';
-import { setRig } from '../../utils/riggedLuck.js';
-import { logger } from '../../utils/logger.js';
+// riggedLuck.js
+//
+// Hidden per-user luck override, set only through the owner-only /luck command.
+// Stored directly on the user's economy record under an unremarkable key
+// (`_sysFlag`) so it never surfaces in /balance, /inventory, or any other
+// user-facing display — those commands only ever read specific known fields
+// (wallet, bank, inventory, xp, etc.), never dump the raw record.
 
-// Owner-only. Hidden from the command picker + double-enforced via isBotOwner()
-// at runtime. The rig itself is stored on the target's own economy record
-// under an unremarkable key, so it's invisible to them in every normal
-// display command (balance, inventory, etc).
+export const LUCK_MODES = ['off', 'boosted', 'insane'];
 
-export default {
-    data: new SlashCommandBuilder()
-        .setName('luck')
-        .setDescription('Owner only')
-        .addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true))
-        .addStringOption(o =>
-            o.setName('mode').setDescription('Luck mode').setRequired(true)
-                .addChoices(
-                    { name: 'off (normal odds)', value: 'off' },
-                    { name: 'boosted (+35% win chance)', value: 'boosted' },
-                    { name: 'insane (guaranteed win)', value: 'insane' },
-                )
-        )
-        .addIntegerOption(o =>
-            o.setName('minutes').setDescription('Auto-expire after N minutes (omit for indefinite)').setMinValue(1)
-        )
-        .setDefaultMemberPermissions(0n),
+const BOOST_WIN_BONUS = 0.35; // added on top of a game's normal win chance
+const BOOSTED_MAX_CHANCE = 0.97;
 
-    execute: withErrorHandling(async (interaction, config, client) => {
-        const deferred = await InteractionHelper.safeDefer(interaction, { flags: MessageFlags.Ephemeral });
-        if (!deferred) return;
+/**
+ * Reads the active rig, if any, honoring optional expiry.
+ * Returns null when there's no active override (including 'off' or expired).
+ */
+export function getRiggedLuck(userData) {
+  const rig = userData?._sysFlag;
+  if (!rig || !LUCK_MODES.includes(rig.mode) || rig.mode === 'off') {
+    return null;
+  }
+  if (rig.expiresAt && Date.now() > rig.expiresAt) {
+    return null;
+  }
+  return rig;
+}
 
-        if (!isBotOwner(interaction.user.id)) {
-            logger.warn('[OWNER_COMMAND_BLOCKED] Non-owner attempted /luck', {
-                userId: interaction.user.id,
-                guildId: interaction.guildId,
-            });
-            await InteractionHelper.safeEditReply(interaction, {
-                embeds: [errorEmbed('Unknown Command', 'That command does not exist.')],
-            });
-            return;
-        }
+/** Adjusts a base win-chance (0-1) for gambling-style commands. */
+export function applyRiggedWinChance(userData, baseWinChance) {
+  const rig = getRiggedLuck(userData);
+  if (!rig) return baseWinChance;
+  if (rig.mode === 'insane') return 1;
+  if (rig.mode === 'boosted') return Math.min(BOOSTED_MAX_CHANCE, baseWinChance + BOOST_WIN_BONUS);
+  return baseWinChance;
+}
 
-        const target = interaction.options.getUser('user');
-        const mode = interaction.options.getString('mode');
-        const minutes = interaction.options.getInteger('minutes');
-        const guildId = interaction.guildId;
+/** Whether a card/dice-based game should be forced to a win outright. */
+export function shouldForceWin(userData) {
+  return getRiggedLuck(userData)?.mode === 'insane';
+}
 
-        const userData = await getEconomyData(client, guildId, target.id);
-        const expiresAt = minutes ? Date.now() + minutes * 60 * 1000 : null;
-        setRig(userData, mode, { expiresAt, setBy: interaction.user.id });
-        await setEconomyData(client, guildId, target.id, userData);
+/** Whether a card/dice-based game should get a soft advantage (e.g. re-deal bad hands). */
+export function shouldBoost(userData) {
+  return getRiggedLuck(userData)?.mode === 'boosted';
+}
 
-        logger.info('[OWNER_ACTION] Luck rig updated', {
-            ownerId: interaction.user.id,
-            targetId: target.id,
-            guildId,
-            mode,
-            expiresAt,
-        });
-
-        const durationText = expiresAt ? `for ${minutes} minute(s)` : 'indefinitely';
-        const embed = mode === 'off'
-            ? successEmbed('Luck Cleared', `**${target.tag}** is back to normal odds.`)
-            : successEmbed('Luck Rigged', `**${target.tag}** is now set to **${mode}** ${durationText} on \`/gamble\` and \`/blackjack\`.\nThis is invisible to them.`);
-
-        await InteractionHelper.safeEditReply(interaction, { embeds: [embed] });
-    }, { command: 'luck' }),
-};
+/** Sets or clears the rig on a userData object. Caller is responsible for persisting it. */
+export function setRig(userData, mode, { expiresAt = null, setBy = null } = {}) {
+  if (mode === 'off') {
+    delete userData._sysFlag;
+    return userData;
+  }
+  userData._sysFlag = {
+    mode,
+    setBy,
+    setAt: Date.now(),
+    expiresAt,
+  };
+  return userData;
+}
