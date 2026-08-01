@@ -48,7 +48,7 @@ export const botConfig = {
     testGuildId: process.env.TEST_GUILD_ID,
 
     // When true (or MAINTENANCE_MODE=true), only bot owners can run commands.
-    maintenanceMode: process.env.MAINTENANCE_MODE === "true",
+    maintenanceMode: process.env.MAINTENANCE_MODE === "false",
 
     // Command prefix for text-based commands (e.g., "!" for "!ping").
     // Supports both slash commands and prefix commands.
@@ -198,7 +198,7 @@ export const botConfig = {
 
     // Jail time after failed rob (milliseconds).
     // 3600000 = 1 hour.
-    robFailJailTime: 3600000,
+    robFailJailTime: 36000,
   },
 
   // =========================
@@ -434,12 +434,12 @@ export const botConfig = {
   // GENERIC BOT MESSAGES
   // =========================
   messages: {
-    noPermission: "You do not have permission to use this command.",
+    noPermission: "Hey dumbass u cant do that.",
     cooldownActive: "Please wait {time} before using this command again.",
     errorOccurred: "An error occurred while executing this command.",
     missingPermissions:
-      "I am missing required permissions to perform this action.",
-    commandDisabled: "This command has been disabled.",
+      "I am missing required permissions to perform this action dumbass.",
+    commandDisabled: "This command has been disabled dumbass.",
     maintenanceMode: "The bot is currently in maintenance mode.",
   },
 
