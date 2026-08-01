@@ -184,36 +184,55 @@ export const botConfig = {
     // Beg command random payout range.
     begMin: 5,
     begMax: 50,
+    
+# ========== CONFIG ==========
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
+BALANCES_FILE = DATA_DIR / "balances.json"
 
-import discord
-from discord.ext import commands
-
-# Make sure your bot has intents for members if needed
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ---------- Replace this with YOUR actual balance storage ----------
-# Example using a simple dict (replace with your database / JSON / Mongo etc.)
-balances = {}  # {user_id: balance}
+
+# ========== BALANCE STORAGE ==========
+def load_balances() -> dict:
+    if BALANCES_FILE.exists():
+        with open(BALANCES_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+
+def save_balances(balances: dict):
+    with open(BALANCES_FILE, "w") as f:
+        json.dump(balances, f, indent=2)
+
 
 def get_balance(user_id: int) -> int:
-    return balances.get(user_id, 0)
+    balances = load_balances()
+    return balances.get(str(user_id), 0)
+
 
 def set_balance(user_id: int, amount: int):
-    balances[user_id] = amount
+    balances = load_balances()
+    balances[str(user_id)] = amount
+    save_balances(balances)
+
 
 def add_balance(user_id: int, amount: int):
-    balances[user_id] = get_balance(user_id) + amount
-# -------------------------------------------------------------------
+    balances = load_balances()
+    current = balances.get(str(user_id), 0)
+    balances[str(user_id)] = current + amount
+    save_balances(balances)
 
 
+# ========== OWNER COMMANDS ==========
 @bot.command(name="setbal")
-@commands.is_owner()          # Only the bot owner can use this
+@commands.is_owner()
 async def set_balance_cmd(ctx, member: discord.Member, amount: int):
-    """Set a user's balance to an exact amount"""
+    """Set a user's balance to an exact amount (Owner only)"""
     set_balance(member.id, amount)
     await ctx.send(f"✅ Set **{member.display_name}**'s balance to **{amount:,}**")
 
@@ -221,25 +240,54 @@ async def set_balance_cmd(ctx, member: discord.Member, amount: int):
 @bot.command(name="addbal")
 @commands.is_owner()
 async def add_balance_cmd(ctx, member: discord.Member, amount: int):
-    """Add (or remove with negative number) to a user's balance"""
+    """Add or remove money from a user's balance (Owner only)"""
     add_balance(member.id, amount)
     new_bal = get_balance(member.id)
-    await ctx.send(f"✅ {'Added' if amount >= 0 else 'Removed'} **{abs(amount):,}** to **{member.display_name}**. New balance: **{new_bal:,}**")
+    action = "Added" if amount >= 0 else "Removed"
+    await ctx.send(
+        f"✅ {action} **{abs(amount):,}** {'to' if amount >= 0 else 'from'} "
+        f"**{member.display_name}**.\nNew balance: **{new_bal:,}**"
+    )
 
 
 @bot.command(name="checkbal")
 @commands.is_owner()
 async def check_balance_cmd(ctx, member: discord.Member = None):
-    """Check any user's balance (owner only)"""
+    """Check any user's balance (Owner only)"""
     member = member or ctx.author
     bal = get_balance(member.id)
-    await ctx.send(f"**{member.display_name}** has **{bal:,}**")
+    await ctx.send(f"**{member.display_name}** currently has **{bal:,}**")
 
 
+# ========== ERROR HANDLING ==========
+@set_balance_cmd.error
+@add_balance_cmd.error
+@check_balance_cmd.error
+async def owner_command_error(ctx, error):
+    if isinstance(error, commands.NotOwner):
+        await ctx.send("❌ Only the bot owner can use this command.")
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("❌ Missing arguments.\nUsage: `!setbal @user amount` or `!addbal @user amount`")
+    elif isinstance(error, commands.BadArgument):
+        await ctx.send("❌ Please provide a valid user mention and a number.")
+    else:
+        raise error
 
 
+# ========== BOT EVENTS ==========
+@bot.event
+async def on_ready():
+    print(f"✅ Logged in as {bot.user} (ID: {bot.user.id})")
+    print(f"📁 Balance file: {BALANCES_FILE.absolute()}")
 
-    
+
+# ========== RUN ==========
+if __name__ == "__main__":
+    token = os.getenv("DISCORD_TOKEN")
+    if not token:
+        raise ValueError("DISCORD_TOKEN environment variable is missing!")
+    bot.run(token)
+
     // Command cooldowns (milliseconds).
     cooldowns: {
       daily: 24 * 60 * 60 * 1000,
