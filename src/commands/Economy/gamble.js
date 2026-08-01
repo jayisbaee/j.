@@ -3,6 +3,7 @@ import { createEmbed, successEmbed, infoEmbed, warningEmbed } from '../../utils/
 import { getEconomyData, setEconomyData } from '../../utils/economy.js';
 import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHandler.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
+import { applyRiggedWinChance } from '../../utils/riggedLuck.js';
 
 const BASE_WIN_CHANCE = 0.4;
 const CLOVER_WIN_BONUS = 0.1;
@@ -76,6 +77,8 @@ export default {
                 cloverMessage = `\n🍀 **Lucky Charm Used (${charmCount - 1} uses remaining):** Your win chance was boosted!`;
                 usedCharm = true;
             }
+
+            winChance = applyRiggedWinChance(userData, winChance);
 
             const win = Math.random() < winChance;
             let cashChange = 0;
